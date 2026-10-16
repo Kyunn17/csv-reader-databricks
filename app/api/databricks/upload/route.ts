@@ -1,38 +1,42 @@
-// app/api/databricks/upload/route.ts
 import { NextResponse } from "next/server";
+import { DBSQLClient } from '@databricks/sql';
 
-export async function POST(request: Request) {
+export async function GET() {
+  const host = process.env.DATABRICKS_HOST;
+  const token = process.env.DATABRICKS_TOKEN;
+  const sqlPath = process.env.DATABRICKS_SQL_PATH;
+
+  if (!host || !token || !sqlPath) {
+    return NextResponse.json({ error: "Env lu masih kosong cuy!" }, { status: 400 });
+  }
+
+  const client = new DBSQLClient();
+
   try {
-    // 1. Nangkep kiriman file CSV (FormData) dari frontend lu
-    const formData = await request.formData();
-    const file = formData.get("csvFile") as File;
+    console.log("Otw ngetuk pintu Databricks...");
+    
+    await client.connect({ 
+      host: host.replace('https://', ''), // Databricks driver gak suka ada https://
+      path: sqlPath, 
+      token: token 
+    });
+    
+    const session = await client.openSession();
+    
+    // Kita suruh Databricks ngetes ngomong doang
+    const queryOperation = await session.executeStatement("SELECT 'Halo dari Databricks, koneksi lu aman!' AS pesan", { runAsync: true });
+    const result = await queryOperation.fetchAll();
+    
+    await session.close();
+    await client.close();
 
-    if (!file) {
-      return NextResponse.json({ error: "File CSV-nya kagak kebawa, cuy!" }, { status: 400 });
-    }
-
-    // 2. Karena ini di server (backend), kita ubah file-nya jadi format data mentah (Buffer)
-    // Biar gampang dilempar ke API Databricks nanti
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
-    // Cuma buat mastiin di terminal lu kalau file-nya nyampe
-    console.log(`[BACKEND] Nerima file: ${file.name}, Ukuran: ${buffer.length} bytes`);
-
-    // ====================================================================
-    // ZONA DATABRICKS (Nanti kita coding koneksinya di sini)
-    // ====================================================================
-    // A. Upload si 'buffer' ini ke Databricks Volumes
-    // B. Tembak query SQL "COPY INTO" ke Databricks
-    // ====================================================================
-
-    // 3. Ngasih balasan ke frontend kalau prosesnya sukses
     return NextResponse.json({ 
-      message: `File ${file.name} udah berhasil nyampe di backend Next.js lu!` 
+      status: "SUKSES NYAMBUNG!", 
+      data: result 
     });
 
-  } catch (error) {
-    console.error("[BACKEND] Waduh error:", error);
-    return NextResponse.json({ error: "Backend lu error pas nerima file" }, { status: 500 });
+  } catch (error: any) {
+    console.error("Gagal nyambung:", error);
+    return NextResponse.json({ status: "GAGAL", error: error.message }, { status: 500 });
   }
 }
