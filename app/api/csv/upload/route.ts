@@ -1,0 +1,76 @@
+import { NextResponse } from "next/server";
+
+export async function POST(request: Request) {
+  try {
+    const formData = await request.formData();
+    const file = formData.get("file");
+
+    if (!(file instanceof File)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "File CSV tidak ditemukan",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (!file.name.toLowerCase().endsWith(".csv")) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "File harus berformat CSV",
+        },
+        { status: 400 }
+      );
+    }
+
+    const filePath = `/Volumes/workspace/default/latihan/${file.name}`;
+
+    const fileBuffer = await file.arrayBuffer();
+
+    const response = await fetch(
+  `${process.env.DATABRICKS_URL}/api/2.0/fs/files${filePath}?overwrite=true`,
+  {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${process.env.DATABRICKS_TOKEN}`,
+      "Content-Type": "application/octet-stream",
+    },
+    body: fileBuffer,
+  }
+);
+    if (!response.ok) {
+      const errorText = await response.text();
+
+      console.error("Databricks upload error:", errorText);
+
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Gagal upload file ke Databricks",
+          error: errorText,
+        },
+        { status: response.status }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: "CSV berhasil di-upload ke Databricks",
+      fileName: file.name,
+      path: filePath,
+    });
+  } catch (error) {
+    console.error("Upload error:", error);
+
+    return NextResponse.json(
+      {
+        success: false,
+        message: "Terjadi error saat upload",
+        error: error instanceof Error ? error.message : String(error),
+      },
+      { status: 500 }
+    );
+  }
+}

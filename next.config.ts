@@ -15,6 +15,7 @@ const nextConfig: NextConfig = {
       },
     },
   },
+  serverExternalPackages: ["@databricks/sql"]
 };
 
 export default nextConfig;
