@@ -3,6 +3,9 @@ import ExcelJS from "exceljs";
 import { NextResponse } from "next/server";
 import { toTableName } from "../../../lib/tableName";
 
+export const dynamic = "force-dynamic";
+
+
 function toExcelValue(value: unknown): ExcelJS.CellValue {
   if (value === null || value === undefined) return null;
   if (typeof value === "bigint") {
