@@ -1,8 +1,9 @@
 import { DBSQLClient } from "@databricks/sql";
-import { NextResponse } from "next/server";
+import { NextResponse,connection} from "next/server";
 import { toTableName } from "../../../lib/tableName";
 
 export async function POST(request: Request) {
+  await connection();
   try {
     const formData = await request.formData();
     const file = formData.get("file");
