@@ -105,6 +105,11 @@ export default function Home() {
     }
   }
 
+  function handleDownloadExcel() {
+  if (!currentFileName) return;
+  window.location.href = `/api/csv/export?file=${encodeURIComponent(currentFileName)}`;
+}
+
   async function fetchData(fileName: string) {
     if (!fileName) {
       setMessage("Belum ada file CSV yang dipilih.");
@@ -280,14 +285,24 @@ export default function Home() {
               </p>
             </div>
 
-            <button
-              onClick={() => fetchData(currentFileName)}
-              disabled={loadingData || !currentFileName}
-              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {loadingData ? "Loading..." : "Refresh"}
-            </button>
-          </div>
+          <div className="flex items-center gap-2">
+          <button
+            onClick={() => fetchData(currentFileName)}
+            disabled={loadingData || !currentFileName}
+            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {loadingData ? "Loading..." : "Refresh"}
+          </button>
+
+          <button
+            onClick={handleDownloadExcel}
+            disabled={!currentFileName}
+            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            Download Excel
+          </button>
+        </div>
+        </div>
 
           {/* Loading */}
           {loadingData ? (
