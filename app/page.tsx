@@ -12,6 +12,11 @@ export default function Home() {
   const [uploading, setUploading] = useState(false);
   const [currentFileName, setCurrentFileName] = useState("");
 
+  // Konfigurasi preparasi
+  const [headerRow, setHeaderRow] = useState(1);
+  const [columnOverrides, setColumnOverrides] = useState("");
+  const [warnings, setWarnings] = useState<string[]>([]);
+
   async function handleUpload() {
     if (!file) {
       setMessage("Pilih file CSV terlebih dahulu.");
@@ -21,39 +26,84 @@ export default function Home() {
     setUploading(true);
     setMessage("");
     setData([]);
-
-    const formData = new FormData();
-    formData.append("file", file);
+    setWarnings([]);
 
     try {
-      const response = await fetch("/api/csv/upload", {
+      // STEP 1: kirim CSV asli + konfigurasi ke /api/csv/prepare
+      const prepareFormData = new FormData();
+      prepareFormData.append("file", file);
+      prepareFormData.append("headerRow", String(headerRow));
+      prepareFormData.append("columnOverrides", columnOverrides);
+
+      const prepareResponse = await fetch("/api/csv/prepare", {
         method: "POST",
-        body: formData,
+        body: prepareFormData,
       });
 
-      const result = await response.json();
+      const prepareResult = await prepareResponse.json();
+      console.log("Prepare response:", {
+        columns: prepareResult.columns,
+        rowCount: prepareResult.rowCount,
+        warnings: prepareResult.warnings,
+      });
 
-      if (!response.ok || !result.success) {
+      if (!prepareResponse.ok || !prepareResult.success) {
         setMessage(
-          result.error ||
-            result.message ||
+          prepareResult.error ||
+            prepareResult.message ||
+            "Gagal mempersiapkan CSV."
+        );
+        return;
+      }
+
+      setWarnings(
+        Array.isArray(prepareResult.warnings) ? prepareResult.warnings : []
+      );
+
+      // STEP 2: bungkus CSV hasil prepare jadi File baru
+      const cleanedFile = new File(
+        [prepareResult.csv],
+        prepareResult.fileName,
+        { type: "text/csv" }
+      );
+
+      // STEP 3: upload file yang sudah dirapikan (bukan yang asli)
+      const uploadFormData = new FormData();
+      uploadFormData.append("file", cleanedFile);
+
+      const uploadResponse = await fetch("/api/csv/upload", {
+        method: "POST",
+        body: uploadFormData,
+      });
+
+      const uploadResult = await uploadResponse.json();
+      console.log("Upload response:", uploadResult);
+
+      if (!uploadResponse.ok || !uploadResult.success) {
+        setMessage(
+          uploadResult.error ||
+            uploadResult.message ||
             "Gagal upload file CSV."
         );
         return;
       }
 
-      setCurrentFileName(result.fileName);
-      setMessage(`Upload berhasil: ${result.fileName}`);
+      if (uploadResult.tableError) {
+        setMessage(
+          `File masuk Volume, tapi tabel gagal dibuat: ${uploadResult.tableError}`
+        );
+        return;
+      }
 
-      // Ambil data dari file yang BARU saja di-upload
-      await fetchData(result.fileName);
+      setCurrentFileName(uploadResult.fileName);
+      setMessage(`Upload berhasil: ${uploadResult.fileName}`);
+
+      // STEP 4: baca data dari tabel yang baru dibuat
+      await fetchData(uploadResult.fileName);
     } catch (error) {
       console.error("Upload error:", error);
-
       setMessage(
-        error instanceof Error
-          ? error.message
-          : "Terjadi error saat upload."
+        error instanceof Error ? error.message : "Terjadi error saat upload."
       );
     } finally {
       setUploading(false);
@@ -79,7 +129,7 @@ export default function Home() {
 
       const result = await response.json();
 
-      console.log("Databricks response:", result);
+      console.log("Databricks response:", result.success, result.rowCount);
 
       if (!response.ok || !result.success) {
         throw new Error(
@@ -112,12 +162,13 @@ export default function Home() {
   // Ambil semua nama kolom dari seluruh data
   const columns = Array.from(
     new Set(data.flatMap((row) => Object.keys(row)))
+  ).filter(
+    (col) => col !== "_rescued_data" || data.some((row) => row[col] != null)
   );
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-12">
       <div className="mx-auto max-w-6xl">
-
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
@@ -131,7 +182,6 @@ export default function Home() {
 
         {/* Upload Card */}
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-
           <label
             htmlFor="csv-file"
             className="flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center transition hover:border-indigo-400 hover:bg-indigo-50/40"
@@ -164,11 +214,11 @@ export default function Home() {
               accept=".csv"
               className="sr-only"
               onChange={(event) => {
-                const selectedFile =
-                  event.target.files?.[0] ?? null;
+                const selectedFile = event.target.files?.[0] ?? null;
 
                 setFile(selectedFile);
                 setData([]);
+                setWarnings([]);
                 setMessage("");
               }}
             />
@@ -186,6 +236,43 @@ export default function Home() {
               </span>
             </div>
           )}
+
+          {/* Konfigurasi preparasi */}
+          <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-slate-700">
+            <label htmlFor="header-row" className="font-medium">
+              Baris header
+            </label>
+            <input
+              id="header-row"
+              type="number"
+              min={1}
+              value={headerRow}
+              onChange={(e) =>
+                setHeaderRow(Math.max(1, Number(e.target.value) || 1))
+              }
+              className="w-20 rounded-lg border border-slate-300 px-3 py-1.5"
+            />
+            <span className="text-xs text-slate-500">
+              1 = baris pertama. Baris di atasnya dibuang.
+            </span>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-slate-700">
+            <label htmlFor="col-overrides" className="font-medium">
+              Ganti nama kolom
+            </label>
+            <input
+              id="col-overrides"
+              type="text"
+              placeholder="26=state"
+              value={columnOverrides}
+              onChange={(e) => setColumnOverrides(e.target.value)}
+              className="w-48 rounded-lg border border-slate-300 px-3 py-1.5"
+            />
+            <span className="text-xs text-slate-500">
+              Format posisi=nama, pisahkan dengan koma. Opsional.
+            </span>
+          </div>
 
           {/* Upload button */}
           <button
@@ -205,11 +292,22 @@ export default function Home() {
               {message}
             </p>
           )}
+
+          {/* Catatan preparasi */}
+          {warnings.length > 0 && (
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <p className="font-medium">Catatan preparasi</p>
+              <ul className="mt-1 list-disc pl-5">
+                {warnings.map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
 
         {/* Data Table */}
         <div className="mt-8 rounded-xl border border-slate-200 bg-white shadow-sm">
-
           {/* Table Header */}
           <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
             <div>
@@ -244,9 +342,7 @@ export default function Home() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-
               <table className="w-full text-left text-sm">
-
                 {/* Dynamic Header */}
                 <thead className="bg-slate-50">
                   <tr>
@@ -276,11 +372,8 @@ export default function Home() {
                             key={column}
                             className="whitespace-nowrap px-6 py-4 text-slate-700"
                           >
-                            {value === null ||
-                            value === undefined ? (
-                              <span className="text-slate-400">
-                                null
-                              </span>
+                            {value === null || value === undefined ? (
+                              <span className="text-slate-400">null</span>
                             ) : typeof value === "object" ? (
                               <span className="text-xs text-slate-600">
                                 {JSON.stringify(value)}
@@ -294,7 +387,6 @@ export default function Home() {
                     </tr>
                   ))}
                 </tbody>
-
               </table>
             </div>
           )}
