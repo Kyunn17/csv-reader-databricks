@@ -1,9 +1,8 @@
 import { DBSQLClient } from "@databricks/sql";
 import ExcelJS from "exceljs";
-import { NextResponse } from "next/server";
+import { NextResponse,connection } from "next/server";
 import { toTableName } from "../../../lib/tableName";
 
-export const dynamic = "force-dynamic";
 
 
 function toExcelValue(value: unknown): ExcelJS.CellValue {
@@ -18,6 +17,8 @@ function toExcelValue(value: unknown): ExcelJS.CellValue {
 }
 
 export async function GET(request: Request) {
+    // Opt this route into request-time rendering, outside any try/catch
+      await connection();
   const client = new DBSQLClient();
 
   try {
