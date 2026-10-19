@@ -20,11 +20,12 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = prepareCsv(await file.text(), {
-      headerRow: Number(formData.get("headerRow") ?? 1),
-      columnOverrides: String(formData.get("columnOverrides") ?? ""),
-    });
+    const headerRaw = String(formData.get("headerRow") ?? "").trim();
 
+    const result = prepareCsv(await file.text(), {
+    headerRow: headerRaw === "" ? "auto" : Number(headerRaw),
+    columnOverrides: String(formData.get("columnOverrides") ?? ""),
+    });
     if (!result.success) {
       return NextResponse.json(result, { status: 400 });
     }

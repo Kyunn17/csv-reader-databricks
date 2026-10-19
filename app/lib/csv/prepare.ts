@@ -1,9 +1,10 @@
 import { detectDelimiter, parseCsv } from "./parse";
 import { applyColumnOverrides, normalizeHeaders } from "./headers";
+import { detectHeaderRow, fixSuspiciousHeaders, PLACEHOLDER } from "./detect";
 import { toCsv } from "./serialize";
 
 export type PrepareOptions = {
-  headerRow?: number; // 1 = baris pertama (dihitung setelah baris kosong dibuang)
+  headerRow?: number | "auto"; // "auto" / kosong = deteksi otomatis
   columnOverrides?: string; // "26=state,1=id"
 };
 
@@ -17,6 +18,8 @@ export type PrepareResult =
       delimiter: string;
       removedEmptyRows: number;
       skippedRowCount: number;
+      headerRowUsed: number;
+      autoDetected: boolean;
       warnings: string[];
     }
   | { success: false; message: string };
@@ -42,8 +45,13 @@ export function prepareCsv(
     return { success: false, message: "CSV kosong atau tidak punya header" };
   }
 
-  // 4. Pilih baris header
-  const headerRowNumber = options.headerRow ?? 1;
+  // 4. Tentukan baris header (otomatis atau manual)
+  const autoDetected =
+    options.headerRow === undefined || options.headerRow === "auto";
+  const headerRowNumber = autoDetected
+    ? detectHeaderRow(nonEmpty)
+    : (options.headerRow as number);
+
   if (
     !Number.isInteger(headerRowNumber) ||
     headerRowNumber < 1 ||
@@ -59,32 +67,45 @@ export function prepareCsv(
   const headerRow = nonEmpty[headerRowNumber - 1];
   const dataRows = nonEmpty.slice(headerRowNumber);
 
-  if (skippedRows.length > 0) {
+  if (autoDetected && headerRowNumber > 1) {
+    warnings.push(
+      `Header terdeteksi otomatis di baris ${headerRowNumber}. ${skippedRows.length} baris di atasnya dibuang.`
+    );
+  } else if (!autoDetected && skippedRows.length > 0) {
     warnings.push(`${skippedRows.length} baris di atas header dibuang.`);
   } else if (
-    headerRow.every((c) => c.trim() === "" || /^(x|col|column|v|field|y)_?\d*$/i.test(c.trim()))
+    !autoDetected &&
+    headerRow.every((c) => c.trim() === "" || PLACEHOLDER.test(c.trim()))
   ) {
     warnings.push(
-      "Header terlihat seperti placeholder (X1, X2, ...). Coba set Baris header ke 2."
+      "Header terlihat seperti placeholder (X1, X2, ...). Coba kosongkan Baris header agar dideteksi otomatis."
     );
   }
 
-  // 5. Kalau ada baris lebih panjang dari header, tambah kolom (tidak ada data hilang)
+  // 5. Nama kolom yang sebenarnya nilai data (hanya di mode otomatis)
+  let workingHeader = headerRow;
+  if (autoDetected) {
+    const fixed = fixSuspiciousHeaders(headerRow, dataRows, skippedRows);
+    workingHeader = fixed.header;
+    warnings.push(...fixed.warnings);
+  }
+
+  // 6. Kalau ada baris lebih panjang dari header, tambah kolom (tidak ada data hilang)
   const maxCols = dataRows.reduce(
     (max, r) => Math.max(max, r.length),
-    headerRow.length
+    workingHeader.length
   );
-  if (maxCols > headerRow.length) {
+  if (maxCols > workingHeader.length) {
     warnings.push(
-      `Ada baris dengan ${maxCols} kolom, header hanya ${headerRow.length}. Kolom tambahan dibuat otomatis.`
+      `Ada baris dengan ${maxCols} kolom, header hanya ${workingHeader.length}. Kolom tambahan dibuat otomatis.`
     );
   }
   const paddedHeader = [
-    ...headerRow,
-    ...Array(maxCols - headerRow.length).fill(""),
+    ...workingHeader,
+    ...Array(maxCols - workingHeader.length).fill(""),
   ];
 
-  // 6. Ganti nama kolom manual (opsional), lalu rapikan
+  // 7. Ganti nama kolom manual (opsional, menang atas otomatis), lalu rapikan
   const overridden = applyColumnOverrides(
     paddedHeader,
     options.columnOverrides ?? ""
@@ -92,7 +113,7 @@ export function prepareCsv(
   warnings.push(...overridden.warnings);
   const columns = normalizeHeaders(overridden.header);
 
-  // 7. Samakan jumlah kolom tiap baris (nilai asli tetap)
+  // 8. Samakan jumlah kolom tiap baris (nilai asli tetap)
   let shortRows = 0;
   const normalizedRows = dataRows.map((r) => {
     if (r.length < maxCols) shortRows++;
@@ -111,6 +132,8 @@ export function prepareCsv(
     delimiter,
     removedEmptyRows,
     skippedRowCount: skippedRows.length,
+    headerRowUsed: headerRowNumber,
+    autoDetected,
     warnings,
   };
 }

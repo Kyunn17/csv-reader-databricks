@@ -11,10 +11,6 @@ export default function Home() {
   const [loadingData, setLoadingData] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [currentFileName, setCurrentFileName] = useState("");
-
-  // Konfigurasi preparasi
-  const [headerRow, setHeaderRow] = useState(1);
-  const [columnOverrides, setColumnOverrides] = useState("");
   const [warnings, setWarnings] = useState<string[]>([]);
 
   async function handleUpload() {
@@ -29,11 +25,9 @@ export default function Home() {
     setWarnings([]);
 
     try {
-      // STEP 1: kirim CSV asli + konfigurasi ke /api/csv/prepare
+      // STEP 1: kirim CSV asli ke /api/csv/prepare (header & kolom dideteksi otomatis)
       const prepareFormData = new FormData();
       prepareFormData.append("file", file);
-      prepareFormData.append("headerRow", String(headerRow));
-      prepareFormData.append("columnOverrides", columnOverrides);
 
       const prepareResponse = await fetch("/api/csv/prepare", {
         method: "POST",
@@ -44,6 +38,7 @@ export default function Home() {
       console.log("Prepare response:", {
         columns: prepareResult.columns,
         rowCount: prepareResult.rowCount,
+        headerRowUsed: prepareResult.headerRowUsed,
         warnings: prepareResult.warnings,
       });
 
@@ -236,43 +231,6 @@ export default function Home() {
               </span>
             </div>
           )}
-
-          {/* Konfigurasi preparasi */}
-          <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-slate-700">
-            <label htmlFor="header-row" className="font-medium">
-              Baris header
-            </label>
-            <input
-              id="header-row"
-              type="number"
-              min={1}
-              value={headerRow}
-              onChange={(e) =>
-                setHeaderRow(Math.max(1, Number(e.target.value) || 1))
-              }
-              className="w-20 rounded-lg border border-slate-300 px-3 py-1.5"
-            />
-            <span className="text-xs text-slate-500">
-              1 = baris pertama. Baris di atasnya dibuang.
-            </span>
-          </div>
-
-          <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-slate-700">
-            <label htmlFor="col-overrides" className="font-medium">
-              Ganti nama kolom
-            </label>
-            <input
-              id="col-overrides"
-              type="text"
-              placeholder="26=state"
-              value={columnOverrides}
-              onChange={(e) => setColumnOverrides(e.target.value)}
-              className="w-48 rounded-lg border border-slate-300 px-3 py-1.5"
-            />
-            <span className="text-xs text-slate-500">
-              Format posisi=nama, pisahkan dengan koma. Opsional.
-            </span>
-          </div>
 
           {/* Upload button */}
           <button
