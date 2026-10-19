@@ -1,5 +1,6 @@
 import { DBSQLClient } from "@databricks/sql";
 import { NextResponse } from "next/server";
+import { toTableName } from "../../lib/tableName";
 
 export async function GET(request: Request) {
   const client = new DBSQLClient();
@@ -10,10 +11,7 @@ export async function GET(request: Request) {
 
     if (!fileName) {
       return NextResponse.json(
-        {
-          success: false,
-          message: "Nama file CSV belum diberikan",
-        },
+        { success: false, message: "Nama file CSV belum diberikan" },
         { status: 400 }
       );
     }
@@ -24,20 +22,16 @@ export async function GET(request: Request) {
       !fileName.toLowerCase().endsWith(".csv")
     ) {
       return NextResponse.json(
-        {
-          success: false,
-          message: "Nama file CSV tidak valid",
-        },
+        { success: false, message: "Nama file CSV tidak valid" },
         { status: 400 }
       );
     }
 
-    const filePath = `/Volumes/workspace/default/latihan/${fileName}`;
+    // Nama tabel diturunkan dari nama file, sudah aman (a-z, 0-9, _)
+    const tableName = toTableName(fileName);
+    const fullTableName = `workspace.default.${tableName}`;
 
-    console.log("=================================");
-    console.log("FILE NAME:", fileName);
-    console.log("FILE PATH:", filePath);
-    console.log("=================================");
+    console.log("TABLE:", fullTableName);
 
     await client.connect({
       host: process.env.DATABRICKS_HOST!,
@@ -47,19 +41,12 @@ export async function GET(request: Request) {
 
     const session = await client.openSession();
 
-    const result = await session.executeStatement(`
-      SELECT *
-      FROM read_files(
-        '${filePath}',
-        format => 'csv',
-        header => true,
-        inferSchema => true
-      )
-    `);
+    const result = await session.executeStatement(
+      `SELECT * FROM ${fullTableName}`
+    );
 
     const rows = await result.fetchAll();
 
-    console.log("ROWS:", rows);
     console.log("ROW COUNT:", rows.length);
 
     await session.close();
@@ -68,6 +55,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       success: true,
       fileName,
+      tableName: fullTableName,
       rowCount: rows.length,
       data: rows,
     });
@@ -81,7 +69,7 @@ export async function GET(request: Request) {
     return NextResponse.json(
       {
         success: false,
-        message: "Failed to read CSV from Databricks",
+        message: "Failed to read table from Databricks",
         error: error instanceof Error ? error.message : String(error),
       },
       { status: 500 }
